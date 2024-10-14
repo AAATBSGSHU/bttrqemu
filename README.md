@@ -13,5 +13,5 @@ chmod +x your/location/to/lzqmu.sh
 ```
 Run the script or add it to your .bashrc/.zshrc for ease of use
 ```sh
-alias lzqmu=your/location/to/lzqmu.sh
+alias lzqmu='your/location/to/lzqmu.sh
 ```

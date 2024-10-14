@@ -1,6 +1,11 @@
 ### _lzqmu_
 Just something I made to make using QEMU not a pain in the ass
 
+#### Features!
+- Easy to use prompt-based UI
+- Create, edit and delete VMs
+- Start and stop VMs easily
+
 #### Installation and usage
 Git clone the repo
 ```sh

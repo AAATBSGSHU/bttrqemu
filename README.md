@@ -1,4 +1,5 @@
 ### _lzqmu_
+Just something I made to make using QEMU not a pain in the ass
 
 #### Installation and usage
 Git clone the repo

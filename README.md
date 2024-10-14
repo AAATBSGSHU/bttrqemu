@@ -1,7 +1,5 @@
 ### _lzqmu_
 
-### How to use
-
 #### Installation and usage
 Git clone the repo
 ```sh

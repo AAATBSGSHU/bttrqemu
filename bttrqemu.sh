@@ -234,7 +234,7 @@ main_menu() {
 
     while true; do
         clear_screen
-        print_header "lzqemu"
+        print_header "bttrqemu - A better way to use QEMU"
         print_menu "$selected_index"
 
         read -rsn1 key

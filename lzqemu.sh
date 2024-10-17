@@ -7,156 +7,218 @@ LOG_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/lzqemu/logs"
 
 mkdir -p "$VM_DIR" "$ISO_DIR" "$LOG_DIR"
 
-BLUE='\033[0;34m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-NC='\033[0m'
+# Color definitions
+declare -A colors=(
+    [GREEN]="\033[0;32m"
+    [YELLOW]="\033[1;33m"
+    [BLUE]="\033[1;34m"
+    [RED]="\033[0;31m"
+    [CYAN]="\033[0;36m"
+    [BOLD]="\033[1m"
+    [RESET]="\033[0m"
+)
 
 clear_screen() {
     clear
 }
 
 print_header() {
-    echo -e "${BLUE}┌─────────────────────────────┐"
-    echo -e "│         lzqemu              │"
-    echo -e "└─────────────────────────────┘${NC}"
-    echo
+    local header_text="$1"
+    echo -e "${colors[BLUE]}${colors[BOLD]}$header_text${colors[RESET]}"
+    echo -e "${colors[CYAN]}-------------------------------------------${colors[RESET]}"
 }
 
 print_menu() {
-    echo -e "${YELLOW}Available options:${NC}"
-    echo -e "  ${GREEN}1${NC}) Create new VM"
-    echo -e "  ${GREEN}2${NC}) Edit existing VM"
-    echo -e "  ${GREEN}3${NC}) Start VM"
-    echo -e "  ${GREEN}4${NC}) Stop VM"
-    echo -e "  ${GREEN}5${NC}) List VMs"
-    echo -e "  ${GREEN}6${NC}) Delete VM"
-    echo -e "  ${GREEN}7${NC}) Exit"
+    local selected_index="$1"
+    local options=(
+        "Create new VM"
+        "Edit existing VM"
+        "Start VM"
+        "Stop VM"
+        "List VMs"
+        "Delete VM"
+        "Exit"
+    )
+
+    echo -e "${colors[YELLOW]}Use Up/Down arrows to select options. Press Enter to choose. Press Left arrow to go back.${colors[RESET]}"
     echo
-    echo -n "Enter your choice [1-7]: "
+
+    for i in "${!options[@]}"; do
+        if [ $i -eq $selected_index ]; then
+            echo -e "${colors[GREEN]}> ${options[$i]}${colors[RESET]}"
+        else
+            echo "  ${options[$i]}"
+        fi
+    done
+}
+
+read_with_escape() {
+    local prompt="$1"
+    local input=""
+    local key
+
+    echo -n "$prompt"
+    while IFS= read -r -n1 -s key; do
+        if [[ $key == $'\x1b' ]]; then
+            read -r -n2 -s rest
+            key+="$rest"
+            if [[ $key == $'\x1b[D' ]]; then
+                echo
+                return 1
+            fi
+        elif [[ $key == $'\n' ]]; then
+            echo
+            break
+        else
+            echo -n "$key"
+            input+="$key"
+        fi
+    done
+
+    echo "$input"
+    return 0
 }
 
 create_vm() {
-    clear_screen
-    print_header
-    echo -e "${YELLOW}Creating a new VM${NC}"
-    echo "─────────────────────"
-    read -p "VM name: " name
-    read -p "Memory size (MB): " memory
-    read -p "Disk size (GB): " disk_size
-    read -p "ISO file name (optional): " iso
+    while true; do
+        clear_screen
+        print_header "Creating a new VM"
 
-    qemu-img create -f qcow2 "$VM_DIR/${name}.qcow2" "${disk_size}G"
-    cat > "$VM_DIR/${name}.conf" << EOF
+        read_with_escape "VM name: " && name=$? || return
+        read_with_escape "Memory size (MB): " && memory=$? || return
+        read_with_escape "Disk size (GB): " && disk_size=$? || return
+        read_with_escape "ISO file name (optional): " && iso=$? || return
+
+        qemu-img create -f qcow2 "$VM_DIR/${name}.qcow2" "${disk_size}G"
+        cat > "$VM_DIR/${name}.conf" << EOF
 name=$name
 memory=$memory
 disk=$VM_DIR/${name}.qcow2
 iso=$ISO_DIR/$iso
 EOF
 
-    echo -e "\n${GREEN}VM '$name' created successfully.${NC}"
+        echo -e "\n${colors[GREEN]}VM '$name' created successfully.${colors[RESET]}"
+        read -p "Press Enter to continue..."
+        return
+    done
 }
 
 edit_vm() {
-    clear_screen
-    print_header
-    echo -e "${YELLOW}Editing an existing VM${NC}"
-    echo "─────────────────────────"
-    list_vms
-    echo
-    read -p "Enter VM name to edit: " selected_vm
+    while true; do
+        clear_screen
+        print_header "Editing an existing VM"
+        list_vms
+        echo
 
-    if [ -f "$VM_DIR/${selected_vm}.conf" ]; then
-        conf_file="$VM_DIR/${selected_vm}.conf"
-        current_memory=$(grep "^memory=" "$conf_file" | cut -d= -f2)
-        current_iso=$(grep "^iso=" "$conf_file" | cut -d= -f2)
+        read_with_escape "Enter VM name to edit: " && selected_vm=$? || return
 
-        read -p "New memory size (MB) [${current_memory}]: " memory
-        memory=${memory:-$current_memory}
-        read -p "New ISO file name [${current_iso##*/}]: " iso
-        iso=${iso:-${current_iso##*/}}
+        if [ -f "$VM_DIR/${selected_vm}.conf" ]; then
+            conf_file="$VM_DIR/${selected_vm}.conf"
+            current_memory=$(grep "^memory=" "$conf_file" | cut -d= -f2)
+            current_iso=$(grep "^iso=" "$conf_file" | cut -d= -f2)
 
-        sed -i "s/^memory=.*/memory=$memory/" "$conf_file"
-        sed -i "s|^iso=.*|iso=$ISO_DIR/$iso|" "$conf_file"
+            read_with_escape "New memory size (MB) [${current_memory}]: " && memory=$? || return
+            memory=${memory:-$current_memory}
+            read_with_escape "New ISO file name [${current_iso##*/}]: " && iso=$? || return
+            iso=${iso:-${current_iso##*/}}
 
-        echo -e "\n${GREEN}VM '$selected_vm' updated successfully.${NC}"
-    else
-        echo -e "\n${YELLOW}VM '$selected_vm' not found.${NC}"
-    fi
+            sed -i "s/^memory=.*/memory=$memory/" "$conf_file"
+            sed -i "s|^iso=.*|iso=$ISO_DIR/$iso|" "$conf_file"
+
+            echo -e "\n${colors[GREEN]}VM '$selected_vm' updated successfully.${colors[RESET]}"
+        else
+            echo -e "\n${colors[RED]}VM '$selected_vm' not found.${colors[RESET]}"
+        fi
+
+        read -p "Press Enter to continue..."
+        return
+    done
 }
 
 start_vm() {
-    clear_screen
-    print_header
-    echo -e "${YELLOW}Starting a VM${NC}"
-    echo "─────────────────"
-    list_vms
-    echo
-    read -p "Enter VM name to start: " selected_vm
+    while true; do
+        clear_screen
+        print_header "Starting a VM"
+        list_vms
+        echo
 
-    if [ -f "$VM_DIR/${selected_vm}.conf" ]; then
-        source "$VM_DIR/${selected_vm}.conf"
+        read_with_escape "Enter VM name to start: " && selected_vm=$? || return
 
-        log_file="$LOG_DIR/${name}.log"
-        if [ -n "$iso" ] && [ -f "$iso" ]; then
-            cmd="qemu-system-x86_64 -name \"$name\" -m \"$memory\" -boot d -hda \"$disk\" -cdrom \"$iso\" -enable-kvm"
+        if [ -f "$VM_DIR/${selected_vm}.conf" ]; then
+            source "$VM_DIR/${selected_vm}.conf"
+
+            log_file="$LOG_DIR/${name}.log"
+            if [ -n "$iso" ] && [ -f "$iso" ]; then
+                cmd="qemu-system-x86_64 -name \"$name\" -m \"$memory\" -boot d -hda \"$disk\" -cdrom \"$iso\" -enable-kvm"
+            else
+                cmd="qemu-system-x86_64 -name \"$name\" -m \"$memory\" -boot c -hda \"$disk\" -enable-kvm"
+            fi
+
+            nohup bash -c "$cmd" > "$log_file" 2>&1 &
+
+            echo -e "\n${colors[GREEN]}VM '$selected_vm' started in the background.${colors[RESET]}"
+            echo -e "Logs are being written to: $log_file"
         else
-            cmd="qemu-system-x86_64 -name \"$name\" -m \"$memory\" -boot c -hda \"$disk\" -enable-kvm"
+            echo -e "\n${colors[RED]}VM '$selected_vm' not found.${colors[RESET]}"
         fi
 
-        nohup bash -c "$cmd" > "$log_file" 2>&1 &
-
-        echo -e "\n${GREEN}VM '$selected_vm' started in the background.${NC}"
-        echo -e "Logs are being written to: $log_file"
-    else
-        echo -e "\n${YELLOW}VM '$selected_vm' not found.${NC}"
-    fi
+        read -p "Press Enter to continue..."
+        return
+    done
 }
 
 stop_vm() {
-    clear_screen
-    print_header
-    echo -e "${YELLOW}Stopping a VM${NC}"
-    echo "────────────────"
-    running_vms=$(pgrep -f "qemu.*-name" | wc -l)
-    if [ "$running_vms" -eq 0 ]; then
-        echo -e "${YELLOW}No VMs are currently running.${NC}"
+    while true; do
+        clear_screen
+        print_header "Stopping a VM"
+        running_vms=$(pgrep -f "qemu.*-name" | wc -l)
+        if [ "$running_vms" -eq 0 ]; then
+            echo -e "${colors[RED]}No VMs are currently running.${colors[RESET]}"
+            read -p "Press Enter to continue..."
+            return
+        fi
+
+        echo "Running VMs:"
+        pgrep -a -f "qemu.*-name" | grep -oP '(?<=-name )[^ ]+' | sed 's/^/  /'
+        echo
+
+        read_with_escape "Enter VM name to stop: " && selected_vm=$? || return
+
+        if pgrep -f "qemu.*-name $selected_vm" > /dev/null; then
+            pkill -f "qemu.*-name $selected_vm"
+            echo -e "\n${colors[GREEN]}VM '$selected_vm' stopped.${colors[RESET]}"
+        else
+            echo -e "\n${colors[RED]}VM '$selected_vm' is not running.${colors[RESET]}"
+        fi
+
+        read -p "Press Enter to continue..."
         return
-    fi
-
-    echo "Running VMs:"
-    pgrep -a -f "qemu.*-name" | grep -oP '(?<=-name )[^ ]+' | sed 's/^/  /'
-    echo
-
-    read -p "Enter VM name to stop: " selected_vm
-
-    if pgrep -f "qemu.*-name $selected_vm" > /dev/null; then
-        pkill -f "qemu.*-name $selected_vm"
-        echo -e "\n${GREEN}VM '$selected_vm' stopped.${NC}"
-    else
-        echo -e "\n${YELLOW}VM '$selected_vm' is not running.${NC}"
-    fi
+    done
 }
 
 delete_vm() {
-    clear_screen
-    print_header
-    echo -e "${YELLOW}Deleting a VM${NC}"
-    echo "────────────────"
-    list_vms
-    echo
-    read -p "Enter VM name to delete: " selected_vm
+    while true; do
+        clear_screen
+        print_header "Deleting a VM"
+        list_vms
+        echo
 
-    if [ -f "$VM_DIR/${selected_vm}.conf" ]; then
-        rm -f "$VM_DIR/${selected_vm}.qcow2" "$VM_DIR/${selected_vm}.conf"
-        echo -e "\n${GREEN}VM '$selected_vm' deleted successfully.${NC}"
-    else
-        echo -e "\n${YELLOW}VM '$selected_vm' not found.${NC}"
-    fi
+        read_with_escape "Enter VM name to delete: " && selected_vm=$? || return
+
+        if [ -f "$VM_DIR/${selected_vm}.conf" ]; then
+            rm -f "$VM_DIR/${selected_vm}.qcow2" "$VM_DIR/${selected_vm}.conf"
+            echo -e "\n${colors[GREEN]}VM '$selected_vm' deleted successfully.${colors[RESET]}"
+        else
+            echo -e "\n${colors[RED]}VM '$selected_vm' not found.${colors[RESET]}"
+        fi
+
+        read -p "Press Enter to continue..."
+        return
+    done
 }
 
 list_vms() {
-    echo -e "${YELLOW}Available VMs:${NC}"
+    echo -e "${colors[YELLOW]}Available VMs:${colors[RESET]}"
     if [ -n "$(ls -A "$VM_DIR"/*.conf 2>/dev/null)" ]; then
         for conf in "$VM_DIR"/*.conf; do
             vm_name=$(basename "$conf" .conf)
@@ -167,30 +229,35 @@ list_vms() {
     fi
 }
 
-#               _-^-_
-#               | | |
-#               —————
-
 main_menu() {
+    local selected_index=0
+
     while true; do
         clear_screen
-        print_header
-        print_menu
+        print_header "lzqemu"
+        print_menu "$selected_index"
 
-        read choice
-        case $choice in
-            1) create_vm ;;
-            2) edit_vm ;;
-            3) start_vm ;;
-            4) stop_vm ;;
-            5) clear_screen; print_header; list_vms ;;
-            6) delete_vm ;;
-            7) clear_screen; echo -e "${YELLOW}Thank you for using lzqemu VM Manager. Goodbye!${NC}"; exit 0 ;;
-            *) echo -e "\n${YELLOW}Invalid option. Please try again.${NC}" ;;
+        read -rsn1 key
+        case "$key" in
+            $'\x1b')
+                read -rsn2 key
+                case "$key" in
+                    '[A') ((selected_index > 0)) && ((selected_index--)) ;;
+                    '[B') ((selected_index < 6)) && ((selected_index++)) ;;
+                esac
+                ;;
+            "")
+                case $selected_index in
+                    0) create_vm ;;
+                    1) edit_vm ;;
+                    2) start_vm ;;
+                    3) stop_vm ;;
+                    4) clear_screen; print_header "List VMs"; list_vms; read -p "Press Enter to continue..." ;;
+                    5) delete_vm ;;
+                    6) clear_screen; echo -e "${colors[YELLOW]}Sayonara!${colors[RESET]}"; exit 0 ;;
+                esac
+                ;;
         esac
-
-        echo
-        read -p "Press Enter to continue..."
     done
 }
 

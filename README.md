@@ -1,4 +1,4 @@
-### _lzqmu_
+### _bttrqemu - A better way to use QEMU _
 Just something I made to make using QEMU not a pain in the ass
 
 #### Features!
